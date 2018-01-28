@@ -6,6 +6,7 @@ Sonarr Transmission Fixer
 
 * Change the USER:PASSWD to your USERNAME and PASSWORD for your Transmission. If you don't have a password you can remove the '-n USER:PASSWD'
 * Run this script as a "custom script" from Sonarr's "Settings > Connect > Connections" option. Set it to function 'On Download' put in the path to the script and save.
+* Make sure the script is executable by the Sonarr user
 * Ideally meant to run with Sonarr copying files, not hardlinking
 * While Sonarr can handle removing of completed downloads, the script does it itself.
 * BASH script
