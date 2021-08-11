@@ -7,7 +7,7 @@
 #
 
 #VARIABLES
-REMOTE="transmission-remote USER:PASSWD" #Change USER and PASSWD
+REMOTE="transmission-remote -n USER:PASSWD" #Change USER and PASSWD
 DLDIR="sonarr" #Name of the folder sonarr downlaods all torrents into, can be customised with 'Category' option in download client options
 
 
