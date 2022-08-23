@@ -4,13 +4,22 @@
 # Lets Sonarr handle copying of the downloaded file and then
 # updates the location of the seeded file for Transmission
 # and finally removes the original downloaded file
-#
+# https://github.com/Cr4zyy/Sonarr-Transmission-Fixer
 
-#VARIABLES
+#VARIABLES set these before you start!
+#transmission
 REMOTE="transmission-remote -n USER:PASSWD" #Change USER and PASSWD
-DLDIR="sonarr" #Name of the folder sonarr downlaods all torrents into, can be customised with 'Category' option in download client options
+#sonarr
+DLDIR="sonarr" #Name of the folder sonarr downloads all torrents into, can be customised with 'Category' option in download client options
+ENABLE_SONARR_REFRESH=0 #set 1 if you want sonarr to refresh the series after moving a season download (not single eps) to scan all the newly moved files
+APIKEY="your_api_key" #Only needed if ENABLE_SONARR_REFRESH=1 Sonarr API Key, found in 'Settings > General'
+#plex
+ENABLE_PLEX_TRASH=0 #set 1 if you want the script to clear plex trash after moving files, some setups might end up with trash files and this just helps keep it tidy
+PLEXTOKEN="your_plex_token" #only if ENABLE_PLEX_TRASH=1
+LIBRARY="your_library_id_key" #only if ENABLE_PLEX_TRASH=1 sectionid/key of tv library on plex (use second script on github to find this easily)
 
 
+#Dont modify below here
 DEST="${sonarr_series_path}"
 SPATH="${sonarr_episodefile_relativepath}"
 TORRENT_NAME="${sonarr_episodefile_scenename}"
@@ -19,6 +28,8 @@ STORED_FILE="${sonarr_episodefile_path}"
 ORIGIN_FILE="${sonarr_episodefile_sourcepath}"
 EVENTTYPE="${sonarr_eventtype}"
 SOURCEDIR="${sonarr_episodefile_sourcefolder}"
+TITLE="${sonarr_series_title}"
+SERIES_ID="${sonarr_series_id}"
 
 SPATH=$(echo "${SPATH%/*}")
 DEST+="/$SPATH"
@@ -33,11 +44,15 @@ printferr() { printf '%s\n' "$@" 1>&2; }
 
 if [[ "$EVENTTYPE" == "Test" ]]; then
     printf '%s | INFO  | Sonarr Event - %s\n' "$DT" "$EVENTTYPE" >> "$LOG"
-    printferr "Connection Test"
+    printferr "Successful connection test"
     exit 0;
+elif [[ "$EVENTTYPE" == "Download" ]]; then
+    printf '%s | INFO  | Sonarr Event - %s | %s | %s\n' "$DT" "$EVENTTYPE" "$SPATH" "${sonarr_episodefile_episodenumbers}" >> "$LOG"
+    printferr "Processing id: $SERIES_ID | $TITLE | $SPATH | Episode ${sonarr_episodefile_episodenumbers}"
 else
-    printf '%s | INFO  | Sonarr Event - %s\n' "$DT" "$EVENTTYPE" >> "$LOG"
-    printferr "Processing..."
+    printf '%s | WARN  | Unsupported Sonarr Event - %s\n' "$DT" "$EVENTTYPE" >> "$LOG"
+    printferr "Unsupported Event Type: %EVENTTYPE, only supports Import/Upgrade downloads"
+    exit 0
 fi
 
 if [ -e "$STORED_FILE" ]
@@ -48,7 +63,7 @@ then
     
     #get torrent folder name if it has one
     if [ "$TORRENT_DIR" != "$DLDIR" ]; then
-        printferr "Torrent downloads into directory, not only file(s)"
+        printferr "Download is in its own folder"
         printf '%s | INFO  | Torrent downloads into directory, not only file(s): /%s\n' "$DT" "$TORRENT_DIR" >> "$LOG"
         printf '%s | INFO  | Torrent must be moved accordingly! Creating directory...\n' "$DT" >> "$LOG"
 
@@ -57,7 +72,7 @@ then
             if [ $? -eq 0 ]; then
                 printf '%s | INFO  | Directory created: %s\n' "$DT" "$TDEST">> "$LOG"
             else
-                printf '%s | ERROR | mkdir could not complete! Check Sonarr event log for more info\n' "$DT" >> "$LOG"
+                printf '%s | ERROR | mkdir could not complete! Check Sonarr log for more info\n' "$DT" >> "$LOG"
             fi
         else
             printf '%s | INFO  | Directory already exists not creating again\n' "$DT" >> "$LOG"
@@ -67,7 +82,7 @@ then
         if [ $? -eq 0 ]; then
             printf '%s | INFO  | Moving file from: %s  ->  %s\n' "$DT" "$STORED_FILE" "$TDEST">> "$LOG"
         else
-            printf '%s | ERROR  | mv could not complete! Check Sonarr event log for more info\n' "$DT" >> "$LOG"
+            printf '%s | ERROR  | mv could not complete! Check Sonarr log for more info\n' "$DT" >> "$LOG"
         fi
     fi
     
@@ -99,6 +114,19 @@ then
                     printf '%s | INFO  | Deleted original additional files %s\n' "$DT" "$TDEST" >> "$LOG"
                     #We moved torrent folders, verify torrent to make sure everything is ok!
                     $REMOTE -t "$TORRENT_ID" -v
+                    printferr "| INFO | Telling Transmission to verify files."
+                    
+                    if [ $ENABLE_SONARR_REFRESH -eq 1 ]; then
+                        #This refreshes the series within sonarr and scans for the newly moved files instead of showing them uncompleted
+                        printferr "| INFO | Telling Sonarr to rescan series $SERIES_ID files."
+                        printf '%s | INFO | Sonarr series rescan\n' "$DT" >> "$LOG"
+                        curl -s -H "Content-Type: application/json" -H "X-Api-Key: $APIKEY" -d '{"name":"RefreshSeries","seriesId":"'$SERIES_ID'"}' http://127.0.0.1:8989/api/v3/command > /dev/null
+                    fi
+                    if [ $ENABLE_PLEX_TRASH -eq 1 ]; then
+                        printferr "| INFO | Telling Plex to clean up trash"
+                        printf '%s | INFO | Plex trash cleanup\n' "$DT" >> "$LOG"
+                        curl -s -X PUT -H "X-Plex-Token: $PLEXTOKEN" http://127.0.0.1:32400/library/sections/$LIBRARY/emptyTrash
+                    fi
                 else
                     printferr "| ERROR | Could not move additional files."
                     printferr "$COPYFILES"
