@@ -11,6 +11,8 @@ Sonarr Transmission Fixer
 * While Sonarr can handle removing of completed downloads, the script does it itself.
 * BASH script
 * Can handle season packs within folders properly as of jun/2021
+* Optionally refresh season wityhin Sonarr to update not capture file moves
+* Optionally empty plex trash in TV livrary, use plex_library_key.sh to find the library number
 
 Sonarr will provide all the required directory and file details to the script, which will then set the seeding location of a torrent to where you store the data and remove the origin file from the default Transmission downlaod directory, Saving you from having two files.
 
