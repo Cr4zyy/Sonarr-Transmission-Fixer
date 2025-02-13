@@ -8,7 +8,7 @@
 
 #VARIABLES set these before you start!
 #transmission
-REMOTE="transmission-remote 127.0.0.1:9091 -n USER:PASSWD" #Change USER and PASSWD
+REMOTE="transmission-remote 127.0.0.1:9091 -n USER:PASSWD" #Change USER and PASSWD and ip as required
 ENABLE_TORRENT_VERIFY=0 # set 1 to verify torrents after folder moves, doesnt apply to a single file download
 #sonarr
 DLDIR="sonarr" # Name of the folder sonarr downloads all torrents into, can be customised with 'Category' option in download client options
@@ -27,9 +27,10 @@ SONARR_PORT="8989"
 
 ENABLE_DEBUG=0 # set to 1 to dump variables into log and exit
 
-#Dont modify below here
+#Below here are the sonarr env variables, I use an unraid system with multiple containers and no "atomic" hard links. The comments explain my mount paths, they might not explain yours so it may need some tweaks.
+
 #DEST is the UNRAID INTAKE DRIVE DIR (where transmission puts complete downloads)
-#DEST=/tv/TV Shows/SHOW_NAME/SEASON 
+#DEST=/tv/TV Shows/SHOW_NAME
 DEST="${sonarr_series_path}"
 #Season only part of path
 SPATH="${sonarr_episodefile_relativepath}"
@@ -51,10 +52,12 @@ SERIES_ID="${sonarr_series_id}"
 SPATH=$(echo "${SPATH%/*}")
 DEST+="/$SPATH"
 
-#fix transmission paths
+# fix paths, this allows you to the expected destination of [[SONARR CONTAINER] /tv/etc] to my transmission container which mounts the same location but at [[Transmission container] /mnt/shares/tv/etc]
+# by default this will add /mnt/ to the start of your sonarr tv path, you can change this as necessary it will only ever be used to tell transmission where the moved files are located so it can update the file location for seeding.
+
 TRANS_DEST="/mnt/shares$DEST"
 
-TORRENT_DIR=$(basename "$SOURCEDIR")
+TORRENT_DIR=$(basename "$SOURCEDIR") # this should match DLDIR above which is the folder sonarr will download its torrents into. This then is used to check if the download is in a folder.
 #TDEST=/tv/TV Shows/SHOW_NAME/SEASON/TORRENT_DIR
 TDEST="$DEST/$TORRENT_DIR"
 
@@ -159,12 +162,12 @@ then
                         #if you move whole folders you might want to verify/refresh/empty trash
                         if [ $ENABLE_TORRENT_VERIFY -eq 1 ]; then
                             $REMOTE -t "$TORRENT_ID" -v
-                            printferr "Telling Transmission to verify files for torrent."
+                            printferr "| INFO  | Telling Transmission to verify files for torrent."
                             printf '%s | INFO  | Telling Transmission to verify files\n' "$DT" >> "$LOG"
                         fi
                         if [ $ENABLE_SONARR_REFRESH -eq 1 ]; then
                             #This refreshes the series within sonarr and scans for the newly moved files instead of showing them uncompleted
-                            printferr "Telling Sonarr to rescan files for series ID: $SERIES_ID."
+                            printferr "| INFO  | Telling Sonarr to rescan files for series ID: $SERIES_ID."
                             printf '%s | INFO  | Sonarr series rescan of ID: %s\n' "$DT" "$SERIES_ID" >> "$LOG"
                             
                             curl -s -H "Content-Type: application/json" -H "X-Api-Key: $APIKEY" -d '{"name":"RefreshSeries","seriesId":'$SERIES_ID'}' http://$SONARR_IP:$SONARR_PORT/api/v3/command > /dev/null
@@ -174,7 +177,7 @@ then
                             fi
                         fi
                         if [ $ENABLE_PLEX_TRASH -eq 1 ]; then
-                            printferr "Telling Plex to clean up trash in library ID: $LIBRARY."
+                            printferr "| INFO  | Telling Plex to clean up trash in library ID: $LIBRARY."
                             printf '%s | INFO  | Plex trash cleanup for library ID: %s\n' "$DT" "$LIBRARY" >> "$LOG"
                             curl -s -X PUT -H "X-Plex-Token: $PLEXTOKEN" http://$PLEX_IP:$PLEX_PORT/library/sections/$LIBRARY/emptyTrash
                             if [ $? -ne 0 ]; then
@@ -241,9 +244,8 @@ then
 fi   
 
 
-#Log upto a maximum of x lines
+#Log upto a maximum of LOGLINES lines
 LINECOUNT=$(wc -l < $LOG)
 if (( $(echo "$LINECOUNT > $LOGLINES"| bc -l) )); then
     echo "$(tail -$LOGLINES $LOG)" > "$LOG"
 fi
-
