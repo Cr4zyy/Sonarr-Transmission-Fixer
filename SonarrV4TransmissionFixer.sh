@@ -8,16 +8,16 @@
 
 #VARIABLES set these before you start!
 #transmission
-REMOTE="transmission-remote 127.0.0.1:9091 -n USER:PASSWD" #Change USER and PASSWD and ip as required
+REMOTE="transmission-remote 127.0.0.1:9091 -n USER:PASSWD" #Change USER and PASSWD
 ENABLE_TORRENT_VERIFY=0 # set 1 to verify torrents after folder moves, doesnt apply to a single file download
 #sonarr
-DLDIR="sonarr" #Name of the folder sonarr downloads all torrents into, customised with 'Category' option in download client options
-ENABLE_SONARR_REFRESH=0 # set 1 if you want sonarr to refresh the series after moving a season folder download to scan all the newly moved files
-APIKEY="your_sonarr_api_key" #Only needed if ENABLE_SONARR_REFRESH=1 Sonarr API Key, found in 'Settings > General'
+DLDIR="sonarr" # Name of the folder sonarr downloads all torrents into, can be customised with 'Category' option in download client options
+ENABLE_SONARR_REFRESH=0 # set 1 if you want sonarr to refresh the series after moving a season download (not single eps) to scan all the newly moved files
+APIKEY="your_sonarr_api_key" # Only needed if ENABLE_SONARR_REFRESH=1 Sonarr API Key, found in 'Settings > General'
 #plex
 ENABLE_PLEX_TRASH=0 # set 1 if you want the script to clear plex trash after moving files, some setups might end up with trash files and this just helps keep it tidy
-PLEXTOKEN="your_plex_token" #only if ENABLE_PLEX_TRASH=1
-LIBRARY="your_library_id_key" #only used if ENABLE_PLEX_TRASH=1 sectionid/key of tv library on plex (use plex_library_key.sh to find this easily)
+PLEXTOKEN="your_plex_token" # only if ENABLE_PLEX_TRASH=1
+LIBRARY="your_library_id_key" # only used if ENABLE_PLEX_TRASH=1 sectionid/key of tv library on plex (use plex_library_key.sh to find this easily)
 
 #IPS AND PORTS change as needed
 PLEX_IP="127.0.0.1"
@@ -25,39 +25,46 @@ PLEX_PORT="32400"
 SONARR_IP="127.0.0.1"
 SONARR_PORT="8989"
 
-#Below here are the sonarr env variables, I use an unraid system with multiple containers and no "atomic" hard links. The comments explain my mount paths, they might not explain yours so it may need some tweaks.
-#DEST is the UNRAID DRIVE DIR (where transmission puts completed downloads)
-DEST="${sonarr_series_path}" # /tv/SHOW_NAME/ 
+ENABLE_DEBUG=0 # set to 1 to dump variables into log and exit
+
+#Dont modify below here
+#DEST is the UNRAID INTAKE DRIVE DIR (where transmission puts complete downloads)
+#DEST=/tv/TV Shows/SHOW_NAME/SEASON 
+DEST="${sonarr_series_path}"
+#Season only part of path
 SPATH="${sonarr_episodefile_relativepath}"
 TORRENT_NAME="${sonarr_episodefile_scenename}"
 TORRENT_ID="${sonarr_download_id}"
 #STORED_FILE is relative to SONARR container
-STORED_FILE="${sonarr_episodefile_path}" # /tv/SHOW_NAME/SEASON/EPISODE.file
+#STORED_FILE=/tv/TV Shows/SHOW_NAME/SEASON/EPISODE.file
+STORED_FILE="${sonarr_episodefile_path}"
 FILE_NAME=$(basename "$STORED_FILE")
 #ORIGIN is relative to Transmission container
-ORIGIN_FILE="${sonarr_episodefile_sourcepath}" # /torrents/sonarr/TORRENT.dir.file
+#ORIGIN_FILE=/torrents/sonarr/TORRENT.dir.file
+ORIGIN_FILE="${sonarr_episodefile_sourcepath}"
 EVENTTYPE="${sonarr_eventtype}"
-SOURCEDIR="${sonarr_episodefile_sourcefolder}" # /torrents/sonarr
+#SOURCEDIR=/torrents/sonarr
+SOURCEDIR="${sonarr_episodefile_sourcefolder}"
 TITLE="${sonarr_series_title}"
 SERIES_ID="${sonarr_series_id}"
 
-SPATH=$(echo "${SPATH%/*}") # "Season xx"
+SPATH=$(echo "${SPATH%/*}")
 DEST+="/$SPATH"
 
-# fix paths, this allows you to the expected destination of [[SONARR CONTAINER] /tv/etc] to my transmission container which mounts the same location but at [[Transmission container] /mnt/shares/tv/etc]
-# by default this will add /mnt/ to the start of your sonarr tv path, you can change this as necessary it will only ever be used to tell transmission where the moved files are located so it can update the file location for seeding.
-TRANS_DEST="/mnt$DEST"
+#fix transmission paths
+TRANS_DEST="/mnt/shares$DEST"
 
-TORRENT_DIR=$(basename "$SOURCEDIR") # this should match DLDIR above which is the folder sonarr will download its torrents into. This then is used to check if the download is in a folder.
-TDEST="$DEST/$TORRENT_DIR" #/tv/SHOW_NAME/SEASON/TORRENT_DIR
+TORRENT_DIR=$(basename "$SOURCEDIR")
+#TDEST=/tv/TV Shows/SHOW_NAME/SEASON/TORRENT_DIR
+TDEST="$DEST/$TORRENT_DIR"
 
-# logging vars
 DT=$(date '+%Y-%m-%d %H:%M:%S')
-LOG=$(dirname $0)
-LOG+="/sonarrtransmissionfixer.log"
+#LOG=$(dirname $0)
+#LOG+="/sonarrtransmissionfixer.log"
+LOG="/sonarrtransmissionfixer.log"
 LOGLINES="100"
-ENABLE_DEBUG=0 # set to 1 to dump variables into log and exit
 
+#this sends specific logs to sonarrs (they show up as errors, no way around that afaik)
 printferr() { printf '%s\n' "$@" 1>&2; }
 
 if [[ "$EVENTTYPE" == "Test" ]]; then
@@ -65,8 +72,8 @@ if [[ "$EVENTTYPE" == "Test" ]]; then
     printferr "Successful connection test"
     exit 0
 elif [[ "$EVENTTYPE" == "Download" ]]; then
-    printf '%s | INFO  | Sonarr Event - %s | %s | %s\n' "$DT" "$EVENTTYPE" "$SPATH" "${sonarr_episodefile_episodenumbers}" >> "$LOG"
-    printferr "Processing id: $SERIES_ID | $TITLE | $SPATH | Episode ${sonarr_episodefile_episodenumbers}"
+    printf '%s | INFO  | Sonarr Event - %s | %s | Episode %s\n' "$DT" "$EVENTTYPE" "$SPATH" "${sonarr_episodefile_episodenumbers}" >> "$LOG"
+    printferr "Processing ID: $SERIES_ID | $TITLE | $SPATH | Episode ${sonarr_episodefile_episodenumbers}"
 else
     printf '%s | WARN  | Unsupported Sonarr Event - %s\n' "$DT" "$EVENTTYPE" >> "$LOG"
     printferr "Unsupported Event Type: %EVENTTYPE, only supports Import/Upgrade downloads"
@@ -127,12 +134,18 @@ then
         TDEST_COUNT=$(find "$TDEST" -maxdepth 1 -type f | wc -l)
         #compare downloaded file count with moved count
         if [ "$SOURCE_COUNT" -eq "$TDEST_COUNT" ]; then
+            
             printf '%s | INFO  | All files in folder copied. %s of %s \n' "$DT" "$TDEST_COUNT" "$SOURCE_COUNT" >> "$LOG"
+            printferr "$TITLE | $SPATH | All files in folder copied. $TDEST_COUNT of $SOURCE_COUNT"
         
             DIFF=$(comm -3 <(ls "$SOURCEDIR" | sort) <(ls "$TDEST" | sort))
             
             if [ -z "$DIFF" ]; then
-                printf '%s | INFO  | Telling Transmission to change seeding file location\n' "$DT" >> "$LOG"
+                printf '%s | INFO  | All file names match as expected. %s of %s \n' "$DT" "$TDEST_COUNT" "$SOURCE_COUNT" >> "$LOG"
+                
+                printf '%s | INFO  | Telling Transmission to change file location\n' "$DT" >> "$LOG"
+                printferr "Telling Transmission to change file location"
+                
                 #-t TorrentID --find NewTorrentDataLocation
                 $REMOTE -t "$TORRENT_ID" --find "$TRANS_DEST"
                 printf '%s | INFO  | Torrent ID: %s, data now in: %s\n' "$DT" "$TORRENT_ID" "$STORED_FILE" >> "$LOG"
@@ -142,31 +155,31 @@ then
                     rm -rf "$SOURCEDIR"
                     if [ $? -eq 0 ]; then
                         #deleted source files
-                        printf '%s | INFO  | Deleted original files successfully %s\n' "$DT" "$SOURCEDIR" >> "$LOG"
+                        printf '%s | INFO  | Deleted original torrent files successfully: %s\n' "$DT" "$SOURCEDIR" >> "$LOG"
                         #if you move whole folders you might want to verify/refresh/empty trash
                         if [ $ENABLE_TORRENT_VERIFY -eq 1 ]; then
                             $REMOTE -t "$TORRENT_ID" -v
-                            printferr "| INFO  | Telling Transmission to verify files."
+                            printferr "Telling Transmission to verify files for torrent."
                             printf '%s | INFO  | Telling Transmission to verify files\n' "$DT" >> "$LOG"
                         fi
                         if [ $ENABLE_SONARR_REFRESH -eq 1 ]; then
                             #This refreshes the series within sonarr and scans for the newly moved files instead of showing them uncompleted
-                            printferr "| INFO  | Telling Sonarr to rescan series $SERIES_ID files."
-                            printf '%s | INFO  | Sonarr series rescan\n' "$DT" >> "$LOG"
-                            #v4 at some point removed "" around series_id
+                            printferr "Telling Sonarr to rescan files for series ID: $SERIES_ID."
+                            printf '%s | INFO  | Sonarr series rescan of ID: %s\n' "$DT" "$SERIES_ID" >> "$LOG"
+                            
                             curl -s -H "Content-Type: application/json" -H "X-Api-Key: $APIKEY" -d '{"name":"RefreshSeries","seriesId":'$SERIES_ID'}' http://$SONARR_IP:$SONARR_PORT/api/v3/command > /dev/null
                             if [ $? -ne 0 ]; then
                                 printf '%s | ERROR | Failed to communicate with Sonarr API during series refresh\n' "$DT" >> "$LOG"
-                                printferr "Failed to communicate with Sonarr"
+                                printferr "Failed to communicate with Sonarr. Check API and IP settings in script"
                             fi
                         fi
                         if [ $ENABLE_PLEX_TRASH -eq 1 ]; then
-                            printferr "| INFO  | Telling Plex to clean up trash."
-                            printf '%s | INFO  | Plex trash cleanup\n' "$DT" >> "$LOG"
+                            printferr "Telling Plex to clean up trash in library ID: $LIBRARY."
+                            printf '%s | INFO  | Plex trash cleanup for library ID: %s\n' "$DT" "$LIBRARY" >> "$LOG"
                             curl -s -X PUT -H "X-Plex-Token: $PLEXTOKEN" http://$PLEX_IP:$PLEX_PORT/library/sections/$LIBRARY/emptyTrash
                             if [ $? -ne 0 ]; then
                                 printf '%s | ERROR | Failed to communicate with Plex during trash emptying\n' "$DT" >> "$LOG"
-                                printferr "Failed to communicate with Plex"
+                                printferr "Failed to communicate with Plex. Check API and IP settings in script"
                             fi
                         fi
                     else
@@ -176,21 +189,44 @@ then
                     fi
                 else
                     printf '%s | ERROR | %s, is a bad SOURCEDIR variable\n' "$DT" "$SOURCEDIR">> "$LOG"
+                    printferr "$SOURCEDIR is a bad SOURCEDIR variable"
                 fi
             else
-                printf '%s | ERROR | Not all source files were detected as copied yet.\n' "$DT" >> "$LOG"
+                printf '%s | ERROR | Not all source files were detected moved to the destination folder\n' "$DT" >> "$LOG"
+                printf '%s | ERROR | Destination folder is: %s\n' "$DT" "$TDEST" >> "$LOG"
+                printf '%s | ERROR | Source files remain in: %s\n' "$DT" "$SOURCEDIR" >> "$LOG"
                 printf '%s | ERROR | Original source dir exists still and Transmission still seeds from it.\n' "$DT" >> "$LOG"
-                printferr "Not all source files were detected in: $TDEST"
+                printferr "| ERROR | Not all source files were detected in: $TDEST"
+                printferr "| ERROR | Source files are located in: $SOURCEDIR"
             fi
         else
             printf '%s | WARN  | Waiting for more files to process: Currently %s of %s\n' "$DT" "$TDEST_COUNT" "$SOURCE_COUNT" >> "$LOG"
             printferr "$TITLE | $SPATH | Waiting for more files to process, currently $TDEST_COUNT of $SOURCE_COUNT"
         fi
     else
-        printf '%s | INFO  | Single file detected: /%s\n' "$DT" "$ORIGIN_FILE" >> "$LOG"
+        printf '%s | INFO  | Single file detected: %s\n' "$DT" "$ORIGIN_FILE" >> "$LOG"
         #-t TorrentID --find NewTorrentDataLocation
+        # --find tells tr where to seed from --move tells tr to move files from current to $TRANS_DEST, sonarr does the moving so just find
         $REMOTE -t "$TORRENT_ID" --find "$TRANS_DEST"
         printf '%s | INFO  | Torrent ID: %s, data now in: %s\n' "$DT" "$TORRENT_ID" "$STORED_FILE" >> "$LOG"
+                
+        if [ -e "$ORIGIN_FILE" ]
+        then
+            ORIGIN_SIZE=$(ls -la "$ORIGIN_FILE" | awk '{print $5}')
+            STORED_SIZE=$(ls -la "$STORED_FILE" | awk '{print $5}')
+            
+            if [ "$ORIGIN_SIZE" -eq "$STORED_SIZE" ]; then
+                rm -f "$ORIGIN_FILE"
+                printf '%s | INFO  | Origin file removed: %s\n' "$DT" "$ORIGIN_FILE" >> "$LOG"
+            else
+                printf '%s | ERROR | Origin file not removed it remains at: %s | %s\n' "$DT" "$ORIGIN_SIZE" "$ORIGIN_FILE" >> "$LOG"
+                printf '%s | ERROR | The origin file did not match the stored one: %s | %s\n' "$DT" "$STORED_SIZE" "$STORED_FILE" >> "$LOG"
+                printferr "| ERROR | Origin file did not match the size of the stored file: $ORIGIN_SIZE/$STORED_SIZE"
+            fi
+        else
+            #i dont think this should ever happen?
+            printf '%s | WARN  | No Original files found to remove\n' "$DT" >> "$LOG"
+        fi
     fi
  else
     if [ -e "$ORIGIN_FILE" ]
@@ -205,10 +241,9 @@ then
 fi   
 
 
-#Log upto a maximum of LOGLINES lines
+#Log upto a maximum of x lines
 LINECOUNT=$(wc -l < $LOG)
 if (( $(echo "$LINECOUNT > $LOGLINES"| bc -l) )); then
     echo "$(tail -$LOGLINES $LOG)" > "$LOG"
 fi
-
 
