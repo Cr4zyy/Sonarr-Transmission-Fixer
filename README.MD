@@ -4,6 +4,7 @@ Sonarr Transmission Fixer
 
 ## Setup
 
+* Use SonarrV5TransmissionFixer.sh for Sonarr V5, if updating to V5 check your Client config. Category and Download directory now both should be set.
 * Use SonarrV4TransmissionFixer.sh for Sonarr V4
 * SonarrTransmissionFixer.sh was built with v3, might work on some early v4 builds
 
